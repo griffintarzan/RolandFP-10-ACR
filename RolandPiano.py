@@ -1,4 +1,5 @@
 from bluepy import btle
+from enum import Enum
 import time
 import pandas as pd
 import logging
@@ -17,6 +18,46 @@ lut = {
     "cmd_write"       : b'\x12', 
     "id_roland"       : b'\x41\x10\x00\x00\x00\x28'
 }
+
+class Instruments(Enum):
+    GRAND_PIANO_1 = (0, 0)
+    GRAND_PIANO_2 = (0, 1)
+    GRAND_PIANO_3 = (0, 2)
+    GRAND_PIANO_4 = (0, 3)
+    E_PIANO = (0, 4)
+    WURLY = (0, 5)
+    CLAV = (0, 6)
+    JAZZ_ORGAN_1 = (0, 7)
+    PIPE_ORGAN = (0, 8)
+    JAZZ_SCAT_1 = (0, 9)
+    STRINGS_1 = (0, 10)
+    PAD = (0, 11)
+    CHOIR_1 = (0, 12)
+    NYLON_STR_GTR = (0, 13)
+    ABASS_CYMBAL = (0, 14)
+
+
+    E_PIANO_1 = (1, 0)
+    E_PIANO_2 = (1, 1)
+    E_PIANO_3 = (1, 2)
+    HARP = (1, 3)
+    VIBRAPHONE = (1, 4) 
+    CELESTA = (1, 5)
+    SYNTH_BELL = (1, 6)
+    STRINGS_2 = (1, 7)
+    HARP_2 = (1, 8)
+    JAZZ_ORGAN_2 = (1, 9)
+    RANDOM_ORGAN = (1, 10)
+    ACCORDION = (1, 11)
+    STRINGS_3 = (1, 12)
+    CHOIR_2 = (1, 13)
+    DECAY_STRINGS = (1, 14)
+    STEEL_STR_GTR = (1, 15)
+    STRINGS_4 = (1, 16)
+    SYNTH_PAD = (1, 17)
+    RANDOM_GTR = (1, 18)
+    CLAV_2 = (1, 19)
+    JAZZ_SCAT_2 = (1, 20)
 
 
 
@@ -46,6 +87,18 @@ def note_string_to_midi(midstr):
 
 fields = {}
 
+def int_to_byte(num):
+    return num.to_bytes(1, byteorder="big")
+
+def data_as_bytes(data_as_int):
+    parsers = {
+        "sequencerTempoWO": lambda x: int_to_byte((x & 0xFF80) >> 7) + int_to_byte(x & 0x7F),
+        "keyTransposeRO": lambda x: int_to_byte(x + 64),
+        "toneForSingle": lambda x: int_to_byte((x & 0xFF000) >> 16) + b"\00" + int_to_byte(x & 0xFF),
+    }
+    ret = parsers["toneForSingle"](data_as_int)
+    return ret
+
 
 # categoryNo: parseInt(data.substr(0, 2), 16),
 # number: parseInt(data.substr(2, 2), 16) * 128 + parseInt(data.substr(4, 2), 16)
@@ -54,7 +107,7 @@ def get_parser(addressName):
     parsers = {
         "sequencerTempoRO": lambda data: (data[1] & b"\x7F"[0]) | ((data[0] & b"\x7F"[0]) << 7),
         "keyTransposeRO"  : lambda x  : x[0]-64,
-        "toneForSingle" : lambda x : (x[0],x[2])
+        "toneForSingle" : lambda x : Instruments((x[0],x[2]))
     }
 
     if addressName in parsers:
@@ -346,6 +399,19 @@ class RolandPiano(btle.Peripheral):
     characteristic_uuid = "7772e5db-3868-4112-a1a9-f2669d106bf3"
     setup_data = b"\x01\x00"
 
+
+    def instrument(self) -> Instruments:
+        return self.read_register("toneForSingle")
+
+    def instrument(self, instrument: Instruments):
+        value = (instrument.value[0] << 16) | instrument.value[1]
+        # print("value is")
+        # print(value)
+        logging.info(f"value is {value}")
+        logging.info(f"in bytes : {data_as_bytes(value)}")
+        # self.write_register('toneForSingle', data_as_bytes(value))
+        self.write_register('toneForSingle', data_as_bytes(value))
+        
     def build_handle_table(self):
         cols = ['handle','uuid_bytes','uuid_str']
         rows = []
@@ -504,6 +570,4 @@ class RolandPiano(btle.Peripheral):
             else:
                 log.critical("Could not reconnect, exitting")
                 raise     
-
-
 
