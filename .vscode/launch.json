@@ -11,7 +11,7 @@
             "program": "app.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
-            "args": ["-m c3:14:a9:3e:8f:77"]
+            "args": ["-m c3:14:a9:3e:8f:77"],
 
         }
     ]

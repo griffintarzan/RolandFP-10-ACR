@@ -13,14 +13,24 @@ handlers:
     level: DEBUG
     formatter: simple
     # stream: ext://sys.stdout
-    mode: a
+    mode: w
     maxBytes: 100000
     filename: main.log
     backupCount: 5
+  key_recorder_file:  # New handler for key recording
+    class: logging.FileHandler
+    level: DEBUG
+    formatter: simple
+    mode: w
+    filename: key_recorder.log
 loggers:
   RolandPiano:
     level: DEBUG
     handlers: [console,file]
+    propagate: no
+  KeyRecorder:
+    level: DEBUG
+    handlers: [key_recorder_file]
     propagate: no
 root:
   level: DEBUG

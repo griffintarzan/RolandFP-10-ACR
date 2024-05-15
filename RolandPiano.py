@@ -4,6 +4,7 @@ import time
 import pandas as pd
 import logging
 log = logging.getLogger(__name__)
+key_recorder = logging.getLogger("KeyRecorder")
 
 
 
@@ -81,6 +82,8 @@ def note_string_to_midi(midstr):
         i += 1
     #Octave
     answer += (int(midstr[-1]))*12
+    print(f"note in int : {answer}") #C2 36 C3 48 C4(mid) 60
+    #TODO: Key in log starts from 0, where in midi it starts from 21 (-1 A)
     return int_to_byte(answer)
 
 
@@ -299,6 +302,7 @@ class Message():
 
                 if len(self.buf) == 2: # Contains one midi msg
                     try:
+                        print("1 midi message")
                         self.status_bytes = [self.status_byte]
                         self.notes     = [self.buf[0:1]]
                         self.velocities = [self.buf[1:2]]
@@ -306,6 +310,7 @@ class Message():
                         return -1  # done, with errors
                 elif len(self.buf) == 6: # Contains two midi msgs ('compressed')
                     try:
+                        print("2 midi messages")
                         self.status_bytes = [self.status_byte, self.buf[3:4]]
                         self.notes     = [self.buf[0:1],self.buf[4:4+1]]
                         self.velocities = [self.buf[1:2],self.buf[5:5+1]]
@@ -357,6 +362,8 @@ class Message():
 
                     log.debug(f"key: {key}, vel: {vel}")
                     log.debug(f"{self.status_bytes[idx].hex()} - note: {self.notes[idx].hex()}, velocity: {self.velocities[idx].hex()}")
+                    # key_recorder.debug(f"key: {key}, vel: {vel}")
+                    key_recorder.debug(f"{self.status_bytes[idx].hex()} - note: {self.notes[idx].hex()}, velocity: {self.velocities[idx].hex()}")
 
                 log.debug(list(self.key_status.values())[-10:])
                 log.debug(f"sustain: {self.sustain}")    
@@ -379,7 +386,7 @@ class Message():
                 return 0
         return -1
 
-
+midi_data = bytearray()
 class MyDelegate(btle.DefaultDelegate):
     message = Message()
     def __init__(self, params = None):
@@ -387,17 +394,41 @@ class MyDelegate(btle.DefaultDelegate):
 
     def handleNotification(self, cHandle, data):
         status = self.message.append(data)
+        # prefix; the length in bytes for the following midi message
+        midi_data.extend(len(data).to_bytes(1, byteorder="little")) 
+        midi_data.extend(data)
+        print(f"data : {data}")
         if status == 1:
             self.message.decode()
         elif status == -1:
             log.error("Not a valid message")
             log.error(self.message)
-
+        
 
 class RolandPiano(btle.Peripheral):
     service_uuid        = "03b80e5a-ede8-4b33-a751-6ce34ec4c700"
     characteristic_uuid = "7772e5db-3868-4112-a1a9-f2669d106bf3"
-    setup_data = b"\x01\x00"
+    setup_data = b"\x01\x00" #data we need to write to enable notification on a certain characteristic
+    
+    def save_to_file(self, filename):
+        # Write the MIDI data to a file
+        with open(filename, 'wb') as midi_file:
+            midi_file.write(midi_data)
+
+    def parse_midi(self, filename):
+        with open(filename, "rb") as midi_file:
+            while True:
+                # Read the length byte
+                length_byte = midi_file.read(1)
+                if not length_byte:
+                    # If the length byte is empty, we have reached the end of the file
+                    break
+                # Convert the length byte to an integer to determine the size of the MIDI message
+                length = ord(length_byte)
+                print(f"length of midi msg: {length}")
+                midi_message = midi_file.read(length)
+                print(f"midi message: {midi_message}")
+                self.writeCharacteristic(16, midi_message)
 
 
     def instrument(self) -> Instruments:
@@ -415,7 +446,31 @@ class RolandPiano(btle.Peripheral):
     def build_handle_table(self):
         cols = ['handle','uuid_bytes','uuid_str']
         rows = []
-        for desc in self.getDescriptors():
+#         handle                            uuid_bytes                              uuid_str
+# 0       1  00002800-0000-1000-8000-00805f9b34fb  00002800-0000-1000-8000-00805f9b34fb
+# 0       2  00002803-0000-1000-8000-00805f9b34fb  00002803-0000-1000-8000-00805f9b34fb
+# 0       3  00002a00-0000-1000-8000-00805f9b34fb  00002a00-0000-1000-8000-00805f9b34fb
+# 0       4  00002803-0000-1000-8000-00805f9b34fb  00002803-0000-1000-8000-00805f9b34fb
+# 0       5  00002a01-0000-1000-8000-00805f9b34fb  00002a01-0000-1000-8000-00805f9b34fb
+# 0       6  00002803-0000-1000-8000-00805f9b34fb  00002803-0000-1000-8000-00805f9b34fb
+# 0       7  00002a04-0000-1000-8000-00805f9b34fb  00002a04-0000-1000-8000-00805f9b34fb
+# 0       8  00002800-0000-1000-8000-00805f9b34fb  00002800-0000-1000-8000-00805f9b34fb
+# 0       9  00002800-0000-1000-8000-00805f9b34fb  00002800-0000-1000-8000-00805f9b34fb
+# 0      10  00002803-0000-1000-8000-00805f9b34fb  00002803-0000-1000-8000-00805f9b34fb
+# 0      11  00002a29-0000-1000-8000-00805f9b34fb  00002a29-0000-1000-8000-00805f9b34fb
+# 0      12  00002803-0000-1000-8000-00805f9b34fb  00002803-0000-1000-8000-00805f9b34fb
+# 0      13  00002a50-0000-1000-8000-00805f9b34fb  00002a50-0000-1000-8000-00805f9b34fb
+# 0      14  00002800-0000-1000-8000-00805f9b34fb  00002800-0000-1000-8000-00805f9b34fb
+# 0      15  00002803-0000-1000-8000-00805f9b34fb  00002803-0000-1000-8000-00805f9b34fb
+# 0      16  7772e5db-3868-4112-a1a9-f2669d106bf3  7772e5db-3868-4112-a1a9-f2669d106bf3
+# 0      17  00002902-0000-1000-8000-00805f9b34fb  00002902-0000-1000-8000-00805f9b34fb
+        # service = self.getServiceByUUID(self.service_uuid)
+        # character = service.getCharacteristics(self.characteristic_uuid)[0]
+        # for c in service.getCharacteristics(self.characteristic_uuid):
+        #     print(c)
+        # Basically, the service we are interested in has 1 characteristic 7772e5db... with an 
+        # additioanl descriptor for CCCD (enabling/disabling notification for that characteristic).
+        for desc in self.getDescriptors(): #service.getDescriptors() give handles 16 and 17.
             rows.append(pd.DataFrame([{'handle' : desc.handle, 'uuid_bytes' : desc.uuid, 'uuid_str' : str(desc.uuid)}],columns = cols))
 
         self.handle_table = pd.concat(rows)
@@ -503,12 +558,25 @@ class RolandPiano(btle.Peripheral):
 
     def play_note(self,note, force):
         note  = note_string_to_midi(note)
+        print(f"note : {note.hex()}")
         force = int_to_byte(force)
 
         ut = self.get_unix_time()
 
         msg = self.get_header(ut) + self.get_timestamp(ut) + lut['note_on'] + note + force
         self.writeCharacteristic(16,msg) # 16 is the handler of the midi characteristic
+
+    # Play note for a time duration
+    def play_note_duration(self, note, force, duration):
+        note  = note_string_to_midi(note)
+        print(f"note : {note.hex()}")
+        force = int_to_byte(force)
+        ut = self.get_unix_time()
+        utLater = int(bin(int(time.time())+duration)[-8:],2).to_bytes(1,byteorder='little')
+        noteOnMsg = self.get_header(ut) + self.get_timestamp(ut) + lut['note_on'] + note + force
+        noteOffMsg = self.get_header(utLater) + self.get_timestamp(utLater) + lut['note_off'] + note + force
+        self.writeCharacteristic(16,noteOnMsg) # 16 is the handler of the midi characteristic
+        self.writeCharacteristic(16,noteOffMsg)
 
     def get_handle(self,uuid):
         return self.handle_table.loc[self.handle_table['uuid_str'].str.contains(uuid)].at[0,'handle']
@@ -552,11 +620,13 @@ class RolandPiano(btle.Peripheral):
         self.read_all_characteristics()
 
         self.setDelegate(MyDelegate())
-        
+        # attribute with UUID 0x2902 is CCCD
         self.writeCharacteristic(self.get_handle('2902'),self.setup_data,withResponse=False)
+        #print(self.get_handle('2902')) #This returns attribute handle 17
         if not self.readCharacteristic(self.get_handle('2902')) == self.setup_data:
             log.error("Notification not correctly set in descriptor")
         self.write_register('connection',b"\x01")
+        #print(self.handle_table)
         log.info("Initialisation sequence completed")
 
     def idle(self):

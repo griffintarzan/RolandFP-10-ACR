@@ -3,7 +3,7 @@ import yaml
 import time
 import RolandPiano as rp
 
-from time import sleep, time
+# from time import sleep, time
 import RPi.GPIO as GPIO
 
 current_instrument_index = 0
@@ -34,19 +34,23 @@ def main():
     try:
 
         piano = rp.RolandPiano("C4:68:F8:B2:78:56")
+        while True:
+            piano.idle()
+            # piano.play_note("C-3", 50) #This is C2
+            # time.sleep(1)
         field_timer = 0
         fields = ['toneForSingle'] # 'masterVolume','sequencerTempoRO',
         # piano.write_register("metronomeSwToggle", b'\x00')
         # Set up GPIO mode and pin
-        GPIO.setmode(GPIO.BOARD)
+        # GPIO.setmode(GPIO.BOARD)
         button1 = 3
-        GPIO.setup(button1, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        # GPIO.setup(button1, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
         # Add event detection for rising edge on button1
-        GPIO.add_event_detect(button1, GPIO.RISING, callback=lambda channel: button_callback(channel, piano), bouncetime=50)
+        # GPIO.add_event_detect(button1, GPIO.RISING, callback=lambda channel: button_callback(channel, piano), bouncetime=50)
         
-        while True:
-            pass
+        # while True:
+            # pass
 
         # log.info(f"Setting instrument to {rp.Instruments.CHOIR_2}")
         # piano.instrument(rp.Instruments.JAZZ_SCAT_2)
@@ -55,6 +59,7 @@ def main():
         # for instrument in rp.Instruments:
         #     logging.info(f"Setting instrument to {instrument}")
         #     piano.instrument(instrument)
+        #     time.sleep(3)
             # piano.play_note("D-6",50)
             # time.sleep(0.8)
             # piano.play_note("D-5",50)
@@ -92,9 +97,11 @@ def main():
             
     except KeyboardInterrupt:
         log.info("Exit cmd given by user, disconnecting..")
-        if ambiPiano:
-            ambiPiano.kill()
         if piano:
+            piano.save_to_file("recording.txt")
+            time.sleep(2)
+            piano.parse_midi("recording.txt")
+            time.sleep(6)
             piano.disconnect()
     finally:
         GPIO.cleanup()
