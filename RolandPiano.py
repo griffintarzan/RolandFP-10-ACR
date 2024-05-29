@@ -3,10 +3,18 @@ from enum import Enum
 import time
 import pandas as pd
 import logging
+import mido
 log = logging.getLogger(__name__)
 key_recorder = logging.getLogger("KeyRecorder")
+#echo 35 | sudo tee /sys/kernel/debug/bluetooth/hci0/conn_max_interval
 
+#According to ble-midi spec, connection should be established at the lowest possible (<15ms).
+#I set /sys/kernel/debug/bluetooth/hci0/conn_max_interval to 12 and min to 8 to get 15ms.
+#units of 1.25ms, 12 x 1.25 = 15ms, 8 x 1.25 = 10ms.
+#min: 24 max: 40 originally
 
+#Actually, I found out it doesn't work unless the max_interval is is >32x1.25 = 40ms...
+#I am guessing the piano doesn't want to negotiate, sticking with 40ms (37.5ms actually).
 
 # TODO: yaml files?
 lut = {
@@ -316,11 +324,68 @@ class Message():
                         self.velocities = [self.buf[1:2],self.buf[5:5+1]]
                     except Exception:
                         return -1  # done, with errors
+                else:
+                    print("more than 2 midi msgs")
                 return 1 # done
-        else: 
+        else: #if the timestampbyte (first byte) is the same, we treat as the same packet?
+            print("not audio msg")
             self.buf += data[1:] # append message
     
         if self.isSysExMsg() and self.sysExMsgEnded() and self.validSysExMsgLength():
+            print("sysex")
+            self.buf      = self.buf.split(lut['sysex_msg_end'])[0] # cut the message at the end
+            self.man_id   = self.buf[0:6]
+            self.cmd      = self.buf[6:6+1]
+            self.address  = self.buf[7:7+4]
+            l             = len(self.buf)
+            self.checksum = self.buf[l-2:l-1] 
+            self.data     = self.buf[11:l-2]
+            return 1 # done succesfully
+        else:
+            return 0 # not done
+
+    #My version of append()
+    def appendNew(self,data):
+        if self.isNewMsg(data):
+            print("new msg")
+        else:
+            print("same timestamp as prev + more than 1 midimsg")
+        # new message, discard old message
+        self.reset()
+        try:
+            self.header_byte    = data[0:1]
+            self.timestamp_byte = data[1:2]
+            self.status_byte    = data[2:3]
+            self.buf            = data[3:]
+        except Exception:
+            return -1 # done, with errors
+        if self.isAudioMsg():
+            # len is 5 + (n*4)
+            # n is not larger than 2, so basically a message can hold 3 midi audio updates. 
+            #TODO: write more elegantly
+
+            if len(self.buf) == 2: # Contains one midi msg
+                try:
+                    print("1 midi message")
+                    self.status_bytes = [self.status_byte]
+                    self.notes     = [self.buf[0:1]]
+                    self.velocities = [self.buf[1:2]]
+                except Exception:
+                    return -1  # done, with errors
+            elif len(self.buf) == 6: # Contains two midi msgs ('compressed')
+                try:
+                    print("2 midi messages")
+                    self.status_bytes = [self.status_byte, self.buf[3:4]]
+                    self.notes     = [self.buf[0:1],self.buf[4:4+1]]
+                    self.velocities = [self.buf[1:2],self.buf[5:5+1]]
+                except Exception:
+                    return -1  # done, with errors
+            else:
+                print("more than 2 midi msgs")
+            return 1 # done
+    
+        if self.isSysExMsg() and self.sysExMsgEnded() and self.validSysExMsgLength():
+            print("sysex")
             self.buf      = self.buf.split(lut['sysex_msg_end'])[0] # cut the message at the end
             self.man_id   = self.buf[0:6]
             self.cmd      = self.buf[6:6+1]
@@ -386,18 +451,29 @@ class Message():
                 return 0
         return -1
 
+
 midi_data = bytearray()
 class MyDelegate(btle.DefaultDelegate):
     message = Message()
     def __init__(self, params = None):
         btle.DefaultDelegate.__init__(self)
+        self.time_ms = time.time() * 1000
 
     def handleNotification(self, cHandle, data):
-        status = self.message.append(data)
+        status = self.message.appendNew(data)
         # prefix; the length in bytes for the following midi message
         midi_data.extend(len(data).to_bytes(1, byteorder="little")) 
         midi_data.extend(data)
         print(f"data : {data}")
+        # unix_time = int(bin(int(time.time()*1000-self.time_ms))[-13:],2)
+        unix_time = int(bin(int(time.time()*1000 - self.time_ms)%8192),2)
+        unix_time_bytes = unix_time.to_bytes(2,byteorder='little')
+        header = 0x80 | ((unix_time >> 7) & 0x3F)  # MSB of the timestamp goes into header
+        timestamp = 0x80 | ((unix_time) & 0x7F)
+        print(f"global start time_ms : {self.time_ms}")
+        print(f"unix_time in bytes : {unix_time_bytes} unix_time : {unix_time}")
+        print(f"header : {header}")
+        print(f"timestamp : {timestamp}")
         if status == 1:
             self.message.decode()
         elif status == -1:
@@ -426,9 +502,19 @@ class RolandPiano(btle.Peripheral):
                 # Convert the length byte to an integer to determine the size of the MIDI message
                 length = ord(length_byte)
                 print(f"length of midi msg: {length}")
-                midi_message = midi_file.read(length)
-                print(f"midi message: {midi_message}")
-                self.writeCharacteristic(16, midi_message)
+                if length == 13:
+                    midi_message = midi_file.read(9)
+                    ts_byte = midi_message[0:1]
+                    print(f"midi message: {midi_message}")
+                    self.writeCharacteristic(16, midi_message, withResponse=False)
+                    midi_message = midi_file.read(4)
+                    print(f"midi message: {ts_byte+midi_message}")
+                    self.writeCharacteristic(16, ts_byte+midi_message, withResponse=False)
+                else:    
+                    midi_message = midi_file.read(length)
+                    print(f"midi message: {midi_message}")
+                    
+                    self.writeCharacteristic(16, midi_message, withResponse=False)
 
 
     def instrument(self) -> Instruments:
@@ -578,6 +664,128 @@ class RolandPiano(btle.Peripheral):
         self.writeCharacteristic(16,noteOnMsg) # 16 is the handler of the midi characteristic
         self.writeCharacteristic(16,noteOffMsg)
 
+
+    def get_ut(self):
+        # return int(bin(int(time.time()*1000 - self.time_ms))[-13:],2)
+        return int(bin(int(time.time()*1000 - self.time_ms)%8192),2)
+    
+
+    def create_ble_midi_header(self, time_ms):
+        header = 0x80 | ((time_ms >> 7) & 0x3F)  # MSB of the timestamp goes into header
+        timestamp = 0x80 | ((time_ms) & 0x7F)  # Remaining 7 bits for timestamp
+        return header, timestamp
+    
+    #header byte : 0x80 (128) to 0xBF(191)
+    #timestamp byte : 0x80 (128) to 0xFF (255)
+    def increment_timestamp(self, b, increment):
+         # Convert bytearray to a list of integers
+        int_list = list(b)
+        
+        # Start from the last byte and increment
+        for i in range(len(int_list) - 1, -1, -1):
+            if int_list[i] < 255:
+                int_list[i] += 1
+                break
+            else:
+                int_list[i] = 0
+                if i == 0:
+                    int_list.insert(0, 1)
+        
+        return int_list
+
+    def play_mid(self, mid):
+        #TODO: There's a problem when Control change messsages are in between note_on msgs
+        # first = False
+        # ut = self.get_ut()
+        ut = 6000
+        bytelength = 0
+        # start_time = ut
+        input_time_ms = ut
+        prev_msg = None
+        for msg in mid:
+            if prev_msg is not None and msg.time == 0: # if delta time is 0, we merge midi messages            
+                first_midi_msg = prev_msg.bin()
+                input_time_ms = int((input_time_ms + prev_msg.time * 1000) % 8192) 
+                header, timestamp = self.create_ble_midi_header(input_time_ms)
+                if isinstance(prev_msg, mido.MetaMessage):
+                    prev_msg = msg
+                    continue
+                if isinstance(msg, mido.MetaMessage):
+                    ble_midi_msg = (header.to_bytes(1,byteorder='little') + 
+                                timestamp.to_bytes(1,byteorder='little') + midi_msg)
+                    self.writeCharacteristic(16, ble_midi_msg, withResponse=False)
+                    print(ble_midi_msg.hex())
+                    prev_msg = msg
+                    bytelength = bytelength + len(ble_midi_msg)
+                    print(f"bytelength : {bytelength}")
+                    # time.sleep(0.01)
+                    continue
+                second_midi_msg = msg.bin()
+                ble_midi_msg = (header.to_bytes(1,byteorder='little') + 
+                                timestamp.to_bytes(1,byteorder='little') + first_midi_msg + 
+                                timestamp.to_bytes(1, byteorder='little') + second_midi_msg)
+                prev_msg = None
+            elif prev_msg is None: # first element or when prev is meta message or was merged
+                prev_msg = msg
+                continue 
+            else: # next msg's delta time is not 0, so we just send prev_msg as 1 midi message.
+                midi_msg = prev_msg.bin()
+                input_time_ms = int((input_time_ms + prev_msg.time * 1000) % 8192) 
+                header, timestamp = self.create_ble_midi_header(input_time_ms)
+                if isinstance(prev_msg, mido.MetaMessage):
+                    prev_msg = msg
+                    continue
+                ble_midi_msg = (header.to_bytes(1,byteorder='little') + 
+                                timestamp.to_bytes(1,byteorder='little') + midi_msg)
+                prev_msg = msg
+            self.writeCharacteristic(16, ble_midi_msg, withResponse=False)
+            bytelength = bytelength + len(ble_midi_msg)
+            
+            print(ble_midi_msg.hex())
+            print(f"bytelength : {bytelength}")
+            #here
+            # time.sleep(0.01)
+            # time.sleep(0.005)
+
+            # if isinstance(msg, mido.MetaMessage):
+            #     continue
+            # if msg.is_cc(64):
+            #     print("pedal skipping")
+            #     continue
+            # self.writeCharacteristic(16, header.to_bytes(1,byteorder='little') 
+            #                          + timestamp.to_bytes(1,byteorder='little') + midi_msg, withResponse=False)
+            # print((header.to_bytes(1,byteorder='little') 
+            #       + timestamp.to_bytes(1,byteorder='little') + midi_msg).hex())
+            # prev_msg = msg
+            
+
+        # for count, msg in enumerate(mid.play()):
+
+        #     # ut = b'\x00'
+            
+        #     midi_msg = msg.bin()
+        #     # if count == 1:
+        #         # print("hi")
+        #         # print(self.readCharacteristic(16))
+        #         # self.read_register("uptime")
+        #     #     ut = self.increment_bytearray(self.readCharacteristic(16)[0:2], 100)
+        #     #     print(ut)
+        #     # if msg.type == 'note_on' and not first:
+        #     #     time.sleep(8)
+        #     #     first = True
+        #     # ut = self.get_ut()
+        #     print(f"start time_ms : {self.time_ms}")
+        #     print(f"ut : {ut} ut in bytes : {ut.to_bytes(2, byteorder='little')}")
+        #     header, timestamp = self.create_ble_midi_header(ut)
+        #     self.writeCharacteristic(16, header.to_bytes(1,byteorder='little') 
+        #                              + timestamp.to_bytes(1,byteorder='little') + midi_msg )
+        #     # self.writeCharacteristic(16, ut + ut + midi_msg)
+            
+        #     print(header.to_bytes(1,byteorder='little') 
+        #           + timestamp.to_bytes(1,byteorder='little') + midi_msg)
+        #     # print(ut + ut + midi_msg)
+        #     print(str(msg))
+
     def get_handle(self,uuid):
         return self.handle_table.loc[self.handle_table['uuid_str'].str.contains(uuid)].at[0,'handle']
 
@@ -598,6 +806,8 @@ class RolandPiano(btle.Peripheral):
                     self.isInitialized = True
                 else:
                     btle.Peripheral.connect(self,self.mac_addr,"random")
+                self.time_ms = time.time() * 1000
+                
                 break
             except Exception:
                 if attempt_num < max_attempts:
@@ -611,14 +821,12 @@ class RolandPiano(btle.Peripheral):
     def __init__(self,mac_addr):
         self.mac_addr = mac_addr
         self.connect(3)
-
         self.midi_ble_service = self.getServiceByUUID(self.service_uuid)
         self.midi_ble_characteristic = self.midi_ble_service.getCharacteristics(self.characteristic_uuid)[0]
 
         self.build_handle_table()
 
         self.read_all_characteristics()
-
         self.setDelegate(MyDelegate())
         # attribute with UUID 0x2902 is CCCD
         self.writeCharacteristic(self.get_handle('2902'),self.setup_data,withResponse=False)

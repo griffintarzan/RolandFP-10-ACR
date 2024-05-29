@@ -2,6 +2,7 @@ import logging
 import yaml
 import time
 import RolandPiano as rp
+import mido
 
 # from time import sleep, time
 import RPi.GPIO as GPIO
@@ -26,16 +27,26 @@ def button_callback(channel, piano):
 
 # Main loop to keep the program running
 def main():
-    
-    
+    mid = mido.MidiFile('midiFiles/Plastic_Love_-_Mariya_Takeuchi.mid')
+    # mid = mido.MidiFile('midiFiles/Ocean_Waves_I_Can_Hear_the_sea.mid')
+    # mid = mido.MidiFile('midiFiles/TalesWeaver_OST_Reminiscence.mid')
+    # mid = mido.MidiFile('midiFiles/The_name_of_lifeInochi_No_Namae-Joe_Hisaishi.mid')
+    # mid = mido.MidiFile('midiFiles/YOUNHA_-__Event_horizon_Piano_ver.mid')
+    # mid = mido.MidiFile('midiFiles/A_Town_with_an_Ocean_View_Kikis_Delivery_Service__Joe_Hisaishi.mid')
+    # mid = mido.MidiFile('midiFiles/Disney_Opening_Theme.mid')
     piano = None
     num = 0
     print(num.to_bytes(1, byteorder="big"))
     try:
 
         piano = rp.RolandPiano("C4:68:F8:B2:78:56")
+        # piano.instrument(rp.Instruments.JAZZ_SCAT_2)
+        piano.play_mid(mid)
+        # time.sleep(250)
         while True:
+            # print("hi")
             piano.idle()
+            
             # piano.play_note("C-3", 50) #This is C2
             # time.sleep(1)
         field_timer = 0
@@ -98,10 +109,11 @@ def main():
     except KeyboardInterrupt:
         log.info("Exit cmd given by user, disconnecting..")
         if piano:
+                
             piano.save_to_file("recording.txt")
-            time.sleep(2)
+            time.sleep(1)
             piano.parse_midi("recording.txt")
-            time.sleep(6)
+            time.sleep(60)
             piano.disconnect()
     finally:
         GPIO.cleanup()
