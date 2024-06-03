@@ -27,13 +27,32 @@ def button_callback(channel, piano):
 
 # Main loop to keep the program running
 def main():
-    mid = mido.MidiFile('midiFiles/Plastic_Love_-_Mariya_Takeuchi.mid')
-    # mid = mido.MidiFile('midiFiles/Ocean_Waves_I_Can_Hear_the_sea.mid')
-    # mid = mido.MidiFile('midiFiles/TalesWeaver_OST_Reminiscence.mid')
-    # mid = mido.MidiFile('midiFiles/The_name_of_lifeInochi_No_Namae-Joe_Hisaishi.mid')
-    # mid = mido.MidiFile('midiFiles/YOUNHA_-__Event_horizon_Piano_ver.mid')
-    # mid = mido.MidiFile('midiFiles/A_Town_with_an_Ocean_View_Kikis_Delivery_Service__Joe_Hisaishi.mid')
-    # mid = mido.MidiFile('midiFiles/Disney_Opening_Theme.mid')
+    midi_playlist = []
+    midi_playlist.append(mido.MidiFile('midiFiles/T.B.H_.mid'))
+    midi_playlist.append(mido.MidiFile('midiFiles/Plastic_Love_-_Mariya_Takeuchi.mid'))
+    # mid = mido.MidiFile('midiFiles/Plastic_Love_-_Mariya_Takeuchi.mid')
+    mid = mido.MidiFile('midiFiles/Ocean_Waves_I_Can_Hear_the_sea.mid')
+    midi_playlist.append(mid)
+    mid = mido.MidiFile('midiFiles/TalesWeaver_OST_Reminiscence.mid')
+    midi_playlist.append(mid)
+    mid = mido.MidiFile('midiFiles/The_name_of_lifeInochi_No_Namae-Joe_Hisaishi.mid')
+    midi_playlist.append(mid)
+    mid = mido.MidiFile('midiFiles/YOUNHA_-__Event_horizon_Piano_ver.mid')
+    midi_playlist.append(mid)
+    mid = mido.MidiFile('midiFiles/A_Town_with_an_Ocean_View_Kikis_Delivery_Service__Joe_Hisaishi.mid')
+    midi_playlist.append(mid)
+    mid = mido.MidiFile('midiFiles/Disney_Opening_Theme.mid')
+    midi_playlist.append(mid)
+    mid = mido.MidiFile('midiFiles/Happy_Birthday_Song_in_Jazz.mid')
+    midi_playlist.append(mid)
+    mid = mido.MidiFile('midiFiles/Le_Festin.mid')
+    midi_playlist.append(mid)
+    mid = mido.MidiFile('midiFiles/Last_Carnival_Piano_Solo.mid')
+    midi_playlist.append(mid)
+    mid = mido.MidiFile('midiFiles/Maplestory_OST_Raindrop_Flower_Ereve_Piano___.mid')
+    midi_playlist.append(mid)
+    mid = mido.MidiFile('midiFiles/Lovelyz_leobeullijeu__-_Ah_Choo.mid')
+    midi_playlist.append(mid)
     piano = None
     num = 0
     print(num.to_bytes(1, byteorder="big"))
@@ -41,8 +60,11 @@ def main():
 
         piano = rp.RolandPiano("C4:68:F8:B2:78:56")
         # piano.instrument(rp.Instruments.JAZZ_SCAT_2)
-        piano.play_mid(mid)
+        for mid in midi_playlist:
+            piano.play_mid(mid)
+            time.sleep(3)
         # time.sleep(250)
+        return
         while True:
             # print("hi")
             piano.idle()

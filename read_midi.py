@@ -1,7 +1,7 @@
 import mido
 import time
 #TODO: Change it to seconds and try it on ble midi
-mid = mido.MidiFile('midiFiles/Plastic_Love_-_Mariya_Takeuchi.mid')
+mid = mido.MidiFile('midiFiles/Maplestory_OST_Raindrop_Flower_Ereve_Piano___.mid')
 print(mid.ticks_per_beat)
 
 print(len(mid.tracks))
