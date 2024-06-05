@@ -3,71 +3,69 @@ import yaml
 import time
 import RolandPiano as rp
 import mido
-
-# from time import sleep, time
+from pathlib import Path
 import RPi.GPIO as GPIO
+from RPLCD.gpio import CharLCD
+
+BUTTON_PIN_1 = 3
+
+
+lcd = CharLCD(pin_rs = 40, pin_rw = None, pin_e = 38, pins_data = [35,33,31,29], 
+              numbering_mode = GPIO.BOARD, cols=16, rows=2, dotsize=8)
+number = 0
+music = (
+    0b00011,
+	0b00010,
+	0b00010,
+	0b00010,
+	0b00010,
+	0b01110,
+	0b11110,
+	0b01110
+ )
+lcd.create_char(0, music)
 
 current_instrument_index = 0
 instrumentList = [instrument.name for instrument in rp.Instruments]
+
+def setup_buttons():
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setup(BUTTON_PIN_1, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+def initialize_midi_playlist(directory='/home/pi/Documents/Dev/RolandPianoControl/midiFiles'):
+    midi_playlist = []
+    midi_files = Path(directory).glob('*.mid')
+    for file in midi_files:     
+        midi_playlist.append((mido.MidiFile(file.resolve()), file.name))
+    return midi_playlist
+midi_playlist = initialize_midi_playlist()
 # Define the callback function for button press event
 def button_callback(channel, piano):
-    global last_button_time
+    if channel == BUTTON_PIN_1:
+        handle_button_1(piano)
 
-    global current_instrument_index
-    current_instrument_index += 1
-    if current_instrument_index >= len(instrumentList):
-        current_instrument_index = 0
-    print(current_instrument_index)
-    new_instrument = rp.Instruments[instrumentList[current_instrument_index]]
-    #TODO: Read instrument first and change it based on that 
-    piano.instrument(new_instrument)
-    logging.info(f"Instrument changed to {new_instrument}")
-    # Check if the time difference since the last button press is greater than debounce time
-    # Update the last button press time
+def handle_button_1(piano):
+    for mid, song_name in midi_playlist:
+        lcd.clear()
+        song_name = song_name.replace("_", " ")
+        lcd.write_string("Playing"+ " \x00 " + song_name[:22])
+        piano.play_mid(mid)
+        lcd.clear()
+        time.sleep(3)
 
 # Main loop to keep the program running
-def main():
-    midi_playlist = []
-    midi_playlist.append(mido.MidiFile('midiFiles/T.B.H_.mid'))
-    midi_playlist.append(mido.MidiFile('midiFiles/Plastic_Love_-_Mariya_Takeuchi.mid'))
-    # mid = mido.MidiFile('midiFiles/Plastic_Love_-_Mariya_Takeuchi.mid')
-    mid = mido.MidiFile('midiFiles/Ocean_Waves_I_Can_Hear_the_sea.mid')
-    midi_playlist.append(mid)
-    mid = mido.MidiFile('midiFiles/TalesWeaver_OST_Reminiscence.mid')
-    midi_playlist.append(mid)
-    mid = mido.MidiFile('midiFiles/The_name_of_lifeInochi_No_Namae-Joe_Hisaishi.mid')
-    midi_playlist.append(mid)
-    mid = mido.MidiFile('midiFiles/YOUNHA_-__Event_horizon_Piano_ver.mid')
-    midi_playlist.append(mid)
-    mid = mido.MidiFile('midiFiles/A_Town_with_an_Ocean_View_Kikis_Delivery_Service__Joe_Hisaishi.mid')
-    midi_playlist.append(mid)
-    mid = mido.MidiFile('midiFiles/Disney_Opening_Theme.mid')
-    midi_playlist.append(mid)
-    mid = mido.MidiFile('midiFiles/Happy_Birthday_Song_in_Jazz.mid')
-    midi_playlist.append(mid)
-    mid = mido.MidiFile('midiFiles/Le_Festin.mid')
-    midi_playlist.append(mid)
-    mid = mido.MidiFile('midiFiles/Last_Carnival_Piano_Solo.mid')
-    midi_playlist.append(mid)
-    mid = mido.MidiFile('midiFiles/Maplestory_OST_Raindrop_Flower_Ereve_Piano___.mid')
-    midi_playlist.append(mid)
-    mid = mido.MidiFile('midiFiles/Lovelyz_leobeullijeu__-_Ah_Choo.mid')
-    midi_playlist.append(mid)
+def main(): 
     piano = None
-    num = 0
-    print(num.to_bytes(1, byteorder="big"))
     try:
-
+        setup_buttons()
         piano = rp.RolandPiano("C4:68:F8:B2:78:56")
         # piano.instrument(rp.Instruments.JAZZ_SCAT_2)
-        for mid in midi_playlist:
-            piano.play_mid(mid)
-            time.sleep(3)
-        # time.sleep(250)
-        return
+        GPIO.add_event_detect(BUTTON_PIN_1, GPIO.RISING, callback=lambda channel: button_callback(channel, piano), bouncetime=300)
+        
         while True:
+            time.sleep(1)
             # print("hi")
-            piano.idle()
+            # piano.idle()
             
             # piano.play_note("C-3", 50) #This is C2
             # time.sleep(1)
@@ -76,8 +74,6 @@ def main():
         # piano.write_register("metronomeSwToggle", b'\x00')
         # Set up GPIO mode and pin
         # GPIO.setmode(GPIO.BOARD)
-        button1 = 3
-        # GPIO.setup(button1, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
         # Add event detection for rising edge on button1
         # GPIO.add_event_detect(button1, GPIO.RISING, callback=lambda channel: button_callback(channel, piano), bouncetime=50)
@@ -135,9 +131,10 @@ def main():
             piano.save_to_file("recording.txt")
             time.sleep(1)
             piano.parse_midi("recording.txt")
-            time.sleep(60)
+            # time.sleep(60)
             piano.disconnect()
     finally:
+        lcd.close(clear=True)
         GPIO.cleanup()
 
 

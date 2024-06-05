@@ -656,29 +656,14 @@ class RolandPiano(btle.Peripheral):
         self.writeCharacteristic(16,noteOffMsg)
     
 
+    #header byte : 0x80 (128) to 0xBF(191)
+    #timestamp byte : 0x80 (128) to 0xFF (255)
     def create_ble_midi_header(self, time_ms):
         header = 0x80 | ((time_ms >> 7) & 0x3F)  # MSB of the timestamp goes into header
         timestamp = 0x80 | ((time_ms) & 0x7F)  # Remaining 7 bits for timestamp
         return header, timestamp
     
-    #header byte : 0x80 (128) to 0xBF(191)
-    #timestamp byte : 0x80 (128) to 0xFF (255)
-    def increment_timestamp(self, b, increment):
-         # Convert bytearray to a list of integers
-        int_list = list(b)
-        
-        # Start from the last byte and increment
-        for i in range(len(int_list) - 1, -1, -1):
-            if int_list[i] < 255:
-                int_list[i] += 1
-                break
-            else:
-                int_list[i] = 0
-                if i == 0:
-                    int_list.insert(0, 1)
-        
-        return int_list
-
+    # This function plays a pre-downloaded midiFile mid on the piano
     def play_mid(self, mid):
         ut = 0
         input_time_ms = ut
