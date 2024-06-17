@@ -3,7 +3,12 @@ from enum import Enum
 import time
 import pandas as pd
 import logging
-import mido
+import RPi.GPIO as GPIO
+
+import config as cfg
+
+
+
 log = logging.getLogger(__name__)
 key_recorder = logging.getLogger("KeyRecorder")
 #echo 35 | sudo tee /sys/kernel/debug/bluetooth/hci0/conn_max_interval
@@ -15,6 +20,10 @@ key_recorder = logging.getLogger("KeyRecorder")
 
 #Actually, I found out it doesn't work unless the max_interval is is >32x1.25 = 40ms...
 #I am guessing the piano doesn't want to negotiate, sticking with 40ms (37.5ms actually).
+
+#Yes, I found it. "You should always give a Roland module about 40 milliseconds to process 
+# a "Data Set 1" message that you send it, before subsequently sending another MIDI message 
+# (including another "Data Set 1") to the module. If you don't, the module may report an error."
 
 # TODO: yaml files?
 lut = {
@@ -29,46 +38,52 @@ lut = {
 }
 
 class Instruments(Enum):
-    GRAND_PIANO_1 = (0, 0)
-    GRAND_PIANO_2 = (0, 1)
-    GRAND_PIANO_3 = (0, 2)
-    GRAND_PIANO_4 = (0, 3)
-    E_PIANO = (0, 4)
-    WURLY = (0, 5)
-    CLAV = (0, 6)
-    JAZZ_ORGAN_1 = (0, 7)
-    PIPE_ORGAN = (0, 8)
-    JAZZ_SCAT_1 = (0, 9)
-    STRINGS_1 = (0, 10)
-    PAD = (0, 11)
-    CHOIR_1 = (0, 12)
-    NYLON_STR_GTR = (0, 13)
-    ABASS_CYMBAL = (0, 14)
+    GRAND_PIANO_1 = (0, 0, 0, 68, 1)
+    GRAND_PIANO_2 = (0, 1, 16, 67, 1)
+    GRAND_PIANO_3 = (0, 2, 4, 64, 1)
+    GRAND_PIANO_4 = (0, 3, 8, 66, 2)
+    E_PIANO = (0, 4, 16, 67, 5)
+    WURLY = (0, 5, 25, 65, 5) #not sure 25, 64, 5? or 65
+    CLAV = (0, 6, 0, 67, 8) #works.
+    JAZZ_ORGAN_1 = (0, 7, 0, 70, 19)
+    PIPE_ORGAN = (0, 8, 8, 70, 20) #this was pipe_organ_2
+    JAZZ_SCAT = (0, 9, 0, 65, 55)
+    STRINGS_1 = (0, 10, 0, 71, 50)
+    PAD = (0, 11, 1, 71, 90) #not sure Correct
+    CHOIR_1 = (0, 12, 8, 64, 53)
+    NYLON_STR_GTR = (0, 13, 0, 0, 25)
+    ABASS_CYMBAL = (0, 14, 0, 66, 33)
 
 
-    E_PIANO_1 = (1, 0)
-    E_PIANO_2 = (1, 1)
-    E_PIANO_3 = (1, 2)
-    HARP = (1, 3)
-    VIBRAPHONE = (1, 4) 
-    CELESTA = (1, 5)
-    SYNTH_BELL = (1, 6)
-    STRINGS_2 = (1, 7)
-    HARP_2 = (1, 8)
-    JAZZ_ORGAN_2 = (1, 9)
-    RANDOM_ORGAN = (1, 10)
-    ACCORDION = (1, 11)
-    STRINGS_3 = (1, 12)
-    CHOIR_2 = (1, 13)
-    DECAY_STRINGS = (1, 14)
-    STEEL_STR_GTR = (1, 15)
-    STRINGS_4 = (1, 16)
-    SYNTH_PAD = (1, 17)
-    RANDOM_GTR = (1, 18)
-    CLAV_2 = (1, 19)
-    JAZZ_SCAT_2 = (1, 20)
+    RAGTIME_PIANO = (1, 0, 0, 64, 4)
+    HARPSICHORD_1 = (1, 1, 0, 66, 7)
+    HARPSICHORD_2 = (1, 2, 8, 66, 7)
+    E_PIANO_2 = (1, 3, 0, 70, 6)
+    VIBRAPHONE = (1, 4, 0, 0, 12) 
+    CELESTA = (1, 5, 0, 0, 9)
+    SYNTH_BELL = (1, 6, 0, 68, 99)
+    STRINGS_2 = (1, 7, 0, 64, 49)
+    HARP = (1, 8, 0, 68, 47)
+    JAZZ_ORGAN_2 = (1, 9, 0, 69, 19)
+    PIPE_ORGAN2 = (1, 10, 8, 70, 20) #not sure GOT IT
+    ACCORDION = (1, 11, 0, 68, 22)
+    CHOIR_2 = (1, 12, 8, 66, 53)
+    CHOIR_3 = (1, 13, 8, 68, 53)
+    SYNTH_PAD = (1, 14, 0, 64, 90)
+    STEEL_STR_GTR = (1, 15, 0, 0, 26)
+    DECAY_STRINGS = (1, 16, 1, 65, 50)
+    DECAY_CHOIR = (1, 17, 1, 64, 53)
+    ACOUSTIC_BASS = (1, 18, 0, 0, 33)
+    FINGERED_BASS = (1, 19, 0, 0, 34)
+    THUM_VOICE = (1, 20, 0, 66, 54)
 
 
+# dictionary of key : bytesarray  value : corresponding class(Instruments)
+instrument_lookup = {
+            (instrument.value[0] << 16) | instrument.value[1]: instrument
+            for instrument in Instruments
+        }
+instrument = None
 
 def int_to_byte(num):
     return num.to_bytes(1,byteorder='big')
@@ -446,7 +461,11 @@ class Message():
 
         elif self.isSysExMsg():
             if self.isValidRolandMsg():
-                log.debug(f"address: {self.address.hex()}, data: {self.data.hex()}, cmd: {self.cmd.hex()}")
+                if self.address == addresses["toneForSingle"]:
+                    global instrument
+                    instrument = instrument_lookup.get(byte_to_int(self.data), None)
+                    # print(instrument_lookup)
+                # log.info(f"address: {self.address.hex()}, data: {self.data.hex()}, cmd: {self.cmd.hex()}")
                 fields[get_address_name(self.address)] = (self.data,True)
                 return 0
         return -1
@@ -460,11 +479,11 @@ class MyDelegate(btle.DefaultDelegate):
         
 
     def handleNotification(self, cHandle, data):
-        status = self.message.appendNew(data)
+        status = self.message.append(data)
         # prefix; the length in bytes for the following midi message
         midi_data.extend(len(data).to_bytes(1, byteorder="little")) 
         midi_data.extend(data)
-        print(f"data : {data}")
+        print(f"data : {data.hex()}")
         if status == 1:
             self.message.decode()
         elif status == -1:
@@ -508,11 +527,16 @@ class RolandPiano(btle.Peripheral):
                     self.writeCharacteristic(16, midi_message, withResponse=False)
 
 
-    def instrument(self) -> Instruments:
-        return self.read_register("toneForSingle")
+    def get_instrument(self):
+        # print(self.read_register("toneForSingle"))
+        self.read_register("toneForSingle")
+        # return self.read_register("toneForSingle")
+        return instrument
 
-    def instrument(self, instrument: Instruments):
-        value = (instrument.value[0] << 16) | instrument.value[1]
+    def instrument(self, inst: Instruments):
+        value = (inst.value[0] << 16) | inst.value[1]
+        global instrument
+        instrument = inst
         # print("value is")
         # print(value)
         logging.info(f"value is {value}")
@@ -564,12 +588,17 @@ class RolandPiano(btle.Peripheral):
         readRegister = False
 
         addr      = addresses[addressName]
-        ut        = self.get_unix_time()
-        header    = self.get_header(ut)
-        timestamp = self.get_timestamp(ut)      
+        # ut        = self.get_unix_time()
+        # header    = self.get_header(ut)
+        # timestamp = self.get_timestamp(ut)    
+        ut = self.get_time_ms()
+        header, timestamp = self.create_ble_midi_header(ut)
+        header = header.to_bytes(1,byteorder='little')
+        timestamp = timestamp.to_bytes(1,byteorder='little')  
 
         if data == None: # Read register
             data      = b"\x00\x00\x00" + int_to_byte(get_address_size(addressName))
+            #TODO: Change this data to size of bytes represented in 4 bytes.. Assuming limited size(represented by 1 byte) here..
             readRegister = True
 
         checksum = self.get_checksum(addr,data)
@@ -583,11 +612,18 @@ class RolandPiano(btle.Peripheral):
             checksum  
 
         if readRegister:
-            msg_pt2 = header + timestamp + lut['sysex_msg_end']
-            self.writeCharacteristic(16,msg_base,withResponse=False)
-            self.writeCharacteristic(16,msg_pt2,withResponse=False)
+            # I need to split packets since the size of msg is 21 bytes (>20bytes)
+            first_packet = msg_base
+            second_packet = header + timestamp + lut['sysex_msg_end']
+            print(f"msg for requesting : {(first_packet + second_packet).hex() }")
+            self.writeCharacteristic(16,first_packet,withResponse=False)
+            self.writeCharacteristic(16,second_packet,withResponse=False)
+            self.waitForNotifications(2.0) #twice as 1 waitfornotification waits for one notify.
+            #The sysex we get may be consisted of more than 1 packets..
         else:
             msg = msg_base + timestamp + lut['sysex_msg_end']
+            print(self.start_time)
+            print(f"Msg i am writing : {msg.hex()}")
             self.writeCharacteristic(16,msg)
 
         self.waitForNotifications(2.0)
@@ -632,6 +668,9 @@ class RolandPiano(btle.Peripheral):
 
     def get_unix_time(self):
         return int(bin(int(time.time()))[-8:],2).to_bytes(1,byteorder='little')
+    
+    def get_time_ms(self):
+        return int((time.time() - self.start_time) * 1000) % 8192
 
     def play_note(self,note, force):
         note  = note_string_to_midi(note)
@@ -665,19 +704,50 @@ class RolandPiano(btle.Peripheral):
     
     # This function plays a pre-downloaded midiFile mid on the piano
     def play_mid(self, mid):
+        # inst = self.get_instrument() maybe inefficient?
+        inst = instrument
+        print(f"inst for this midi player : {str(inst)}")
+        bank_msb = inst.value[2]
+        bank_lsb = inst.value[3]
+        pc = inst.value[4] - 1
         ut = 0
         input_time_ms = ut
         for count, msg in enumerate(mid.play()):
+            if not GPIO.input(3):
+                return
             input_time_ms = int((input_time_ms + msg.time * 1000) % 8192)          
             midi_msg = msg.bin()
             if (msg.type == 'program_change'):
+                # extract channel number nibble(4-bits) ex) 0xb0's 0 and 0xb1's 1.
+                msg_channel = (midi_msg[0] & 0xF)
+                
+                # bank_msb = 16
+                # bank_lsb = 67
+                # pc = 0
+                # calculate the 2 cc messages to send for bank select
+                # First : BnH 00H msbH 
+                # Second : BnH 20H lsbH
+                bank_select_msb = (0xb0 | msg_channel).to_bytes(1, byteorder='big') + b'\x00' + bank_msb.to_bytes(1, byteorder='big')
+                bank_select_lsb = (0xb0 | msg_channel).to_bytes(1, byteorder='big') + b'\x20' + bank_lsb.to_bytes(1, byteorder='big')
+                pc_msg = (0xc0 | msg_channel).to_bytes(1, byteorder='big') + pc.to_bytes(1, byteorder='big')
+                #pack 3 midi msgs into one packet
+                header, timestamp = self.create_ble_midi_header(input_time_ms)
+                header = header.to_bytes(1, byteorder='big')
+                timestamp = timestamp.to_bytes(1, byteorder='big')
+                full_pc_msg = (header + timestamp + bank_select_msb
+                          + timestamp + bank_select_lsb
+                          + timestamp + pc_msg)
+                print(f"full_pc_msg : {full_pc_msg.hex()}")
+                print(midi_msg.hex())
+                self.writeCharacteristic(16, full_pc_msg)
+                continue
                 midi_msg[1] = 1
-            header, timestamp = self.create_ble_midi_header(input_time_ms)
+            header, timestamp = self.create_ble_midi_header(input_time_ms)      
             self.writeCharacteristic(16, header.to_bytes(1,byteorder='little') 
                                      + timestamp.to_bytes(1,byteorder='little') + midi_msg )
-            print(header.to_bytes(1,byteorder='little') 
-                  + timestamp.to_bytes(1,byteorder='little') + midi_msg)
-            print(str(msg))
+            # print(header.to_bytes(1,byteorder='little') 
+            #       + timestamp.to_bytes(1,byteorder='little') + midi_msg)
+            # print(str(msg))
 
         # ut = self.get_ut()
         # ut = 0
@@ -796,11 +866,13 @@ class RolandPiano(btle.Peripheral):
         self.midi_ble_characteristic = self.midi_ble_service.getCharacteristics(self.characteristic_uuid)[0]
 
         self.build_handle_table()
-
+        self.start_time = time.time()
         self.read_all_characteristics()
         self.setDelegate(MyDelegate())
         # attribute with UUID 0x2902 is CCCD
+        
         self.writeCharacteristic(self.get_handle('2902'),self.setup_data,withResponse=False)
+        
         #print(self.get_handle('2902')) #This returns attribute handle 17
         if not self.readCharacteristic(self.get_handle('2902')) == self.setup_data:
             log.error("Notification not correctly set in descriptor")
