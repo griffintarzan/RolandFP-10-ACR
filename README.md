@@ -16,3 +16,4 @@ As a piano hobbyist and developer, I wanted to extend the capabilities of my Rol
 - **Recording & Playback:** Record and playback performances directly on the piano.
 - **LCD Display & Button Interface:** hardware interface using an LCD display and physical buttons to control and interact with the system.
 
+Learned a lot of Roland Digital Piano's MIDI protocol usage [from](https://github.com/evanraalte/RolandPianoControl)
