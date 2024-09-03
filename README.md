@@ -18,6 +18,6 @@ As a piano hobbyist and developer, I wanted to extend the capabilities of my Rol
 - **LCD Display & Button Interface:** hardware interface using an LCD display and physical buttons to control and interact with the system.
 
 ## **Demo**
-[![Everything Is AWESOME](https://img.youtube.com/vi/GiNWyozjhzI/0.jpg)]((https://youtube.com/shorts/GiNWyozjhzI) "Everything Is AWESOME")
+[![Everything Is AWESOME](https://img.youtube.com/vi/GiNWyozjhzI/0.jpg)](https://www.youtube.com/watch?v=GiNWyozjhzI "Everything Is AWESOME")
 
 Learned a lot of Roland Digital Piano's MIDI protocol usage [from](https://github.com/evanraalte/RolandPianoControl)
