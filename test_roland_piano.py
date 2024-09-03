@@ -6,6 +6,7 @@ import mido
 from pathlib import Path
 import RPi.GPIO as GPIO
 from RPLCD.gpio import CharLCD
+import random
 
 import config as cfg
 
@@ -24,7 +25,7 @@ class Node:
 
 # current_instrument_index = 0
 instrumentList = [instrument for instrument in rp.Instruments]
-modeList = ["instrument", "recorder", "midiFile"]
+modeList = ["instrument", "recorder", "midiFile", "midiPlayAll"]
 def create_linked_list(list):
     head = Node(list[0])
     current = head
@@ -120,6 +121,8 @@ def handle_button_1(piano, lcd):
         song_name = current_midiFile_node.data[1].replace("_", " ")
         print("MIDFile"+ " \x00 " + song_name[:22])
         display_message(lcd, "MIDFile"+ " \x00 " + song_name[:22])
+    elif current_mode_node.data == "midiPlayAll":
+        display_message(lcd, "Midi Play ALL")
     cfg.escape_pressed = False
 
 # Change Mode (Instrument / Recorder / MIDI Play)
@@ -146,6 +149,8 @@ def handle_button_2(piano, lcd):
         song_name = current_midiFile_node.data[1].replace("_", " ")
         print("MIDFile"+ " \x00 " + song_name[:22])
         display_message(lcd, "MIDFile"+ " \x00 " + song_name[:22])
+    elif current_mode_node.data == "midiPlayAll":
+        display_message(lcd, "Midi Play ALL")
     
 
 # go next
@@ -183,7 +188,7 @@ def handle_button_5(piano, lcd):
     global current_instrument_node
     global piano_instrument_node
     if current_mode_node.data == "instrument":
-        piano.instrument(current_instrument_node.data)
+        piano.set_instrument(current_instrument_node.data)
         piano_instrument_node = current_instrument_node
     elif current_mode_node.data == "recorder":
         pass
@@ -192,8 +197,24 @@ def handle_button_5(piano, lcd):
         song_name = song_name.replace("_", " ")
         display_message(lcd, "Playing"+ " \x00 " + song_name[:22])
         piano.play_mid(mid)
+    elif current_mode_node.data == "midiPlayAll":
+        display_message(lcd, "Midi Play ALL")
+        shuffled_playlist = sorted(midi_playlist, key=lambda x: random.random())
+        for mid, song_name in shuffled_playlist:
+            song_name = song_name.replace("_", " ")
+            display_message(lcd, "Playing"+ " \x00 " + song_name[:22])
+            piano.play_mid(mid)
+            time.sleep(5)
+        piano.disconnect()
+        lcd.close(clear=True)
+        GPIO.cleanup()
+        exit()
+        
+
         
 # Main loop to keep the program running
+#TODO: First connection should find instrument for sure.. or else it won't locate bank_msb lsb
+# and break the play_mid
 def main():
     piano = None
     try:

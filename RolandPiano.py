@@ -4,7 +4,9 @@ import time
 import pandas as pd
 import logging
 import RPi.GPIO as GPIO
-
+from roland_message import Message
+from roland_address import RolandAddressMap
+from roland_instruments import Instruments
 import config as cfg
 
 
@@ -37,59 +39,10 @@ lut = {
     "id_roland"       : b'\x41\x10\x00\x00\x00\x28'
 }
 
-class Instruments(Enum):
-    GRAND_PIANO_1 = (0, 0, 0, 68, 1)
-    GRAND_PIANO_2 = (0, 1, 16, 67, 1)
-    GRAND_PIANO_3 = (0, 2, 4, 64, 1)
-    GRAND_PIANO_4 = (0, 3, 8, 66, 2)
-    E_PIANO = (0, 4, 16, 67, 5)
-    WURLY = (0, 5, 25, 65, 5) #not sure 25, 64, 5? or 65
-    CLAV = (0, 6, 0, 67, 8) #works.
-    JAZZ_ORGAN_1 = (0, 7, 0, 70, 19)
-    PIPE_ORGAN = (0, 8, 8, 70, 20) #this was pipe_organ_2
-    JAZZ_SCAT = (0, 9, 0, 65, 55)
-    STRINGS_1 = (0, 10, 0, 71, 50)
-    PAD = (0, 11, 1, 71, 90) #not sure Correct
-    CHOIR_1 = (0, 12, 8, 64, 53)
-    NYLON_STR_GTR = (0, 13, 0, 0, 25)
-    ABASS_CYMBAL = (0, 14, 0, 66, 33)
-
-
-    RAGTIME_PIANO = (1, 0, 0, 64, 4)
-    HARPSICHORD_1 = (1, 1, 0, 66, 7)
-    HARPSICHORD_2 = (1, 2, 8, 66, 7)
-    E_PIANO_2 = (1, 3, 0, 70, 6)
-    VIBRAPHONE = (1, 4, 0, 0, 12) 
-    CELESTA = (1, 5, 0, 0, 9)
-    SYNTH_BELL = (1, 6, 0, 68, 99)
-    STRINGS_2 = (1, 7, 0, 64, 49)
-    HARP = (1, 8, 0, 68, 47)
-    JAZZ_ORGAN_2 = (1, 9, 0, 69, 19)
-    PIPE_ORGAN2 = (1, 10, 8, 70, 20) #not sure GOT IT
-    ACCORDION = (1, 11, 0, 68, 22)
-    CHOIR_2 = (1, 12, 8, 66, 53)
-    CHOIR_3 = (1, 13, 8, 68, 53)
-    SYNTH_PAD = (1, 14, 0, 64, 90)
-    STEEL_STR_GTR = (1, 15, 0, 0, 26)
-    DECAY_STRINGS = (1, 16, 1, 65, 50)
-    DECAY_CHOIR = (1, 17, 1, 64, 53)
-    ACOUSTIC_BASS = (1, 18, 0, 0, 33)
-    FINGERED_BASS = (1, 19, 0, 0, 34)
-    THUM_VOICE = (1, 20, 0, 66, 54)
-
-
 # dictionary of key : bytesarray  value : corresponding class(Instruments)
-instrument_lookup = {
-            (instrument.value[0] << 16) | instrument.value[1]: instrument
-            for instrument in Instruments
-        }
-instrument = None
 
-def int_to_byte(num):
-    return num.to_bytes(1,byteorder='big')
 
-def byte_to_int(byte):
-    return int.from_bytes(byte,byteorder='big')
+
 
 def note_string_to_midi(midstr):
     notes = [["C"],["C#","Db"],["D"],["D#","Eb"],["E"],["F"],["F#","Gb"],["G"],["G#","Ab"],["A"],["A#","Bb"],["B"]]
@@ -130,7 +83,8 @@ def data_as_bytes(data_as_int):
 # number: parseInt(data.substr(2, 2), 16) * 128 + parseInt(data.substr(4, 2), 16)
 
 def get_parser(addressName):
-    parsers = {
+    pass
+    """parsers = {
         "sequencerTempoRO": lambda data: (data[1] & b"\x7F"[0]) | ((data[0] & b"\x7F"[0]) << 7),
         "keyTransposeRO"  : lambda x  : x[0]-64,
         "toneForSingle" : lambda x : Instruments((x[0],x[2]))
@@ -139,336 +93,9 @@ def get_parser(addressName):
     if addressName in parsers:
         return parsers[addressName]
     else:
-        return byte_to_int
-
-addresses = {
-    # 010000xx
-    "serverSetupFileName":            b"\x01\x00\x00\x00",
-    # 010001xx
-    "songToneLanguage":               b"\x01\x00\x01\x00",
-    "keyTransposeRO":                 b"\x01\x00\x01\x01",
-    "songTransposeRO":                b"\x01\x00\x01\x02",
-    "sequencerStatus":                b"\x01\x00\x01\x03",
-    "sequencerMeasure":               b"\x01\x00\x01\x05",
-    "sequencerTempoNotation":         b"\x01\x00\x01\x07",
-    "sequencerTempoRO":               b"\x01\x00\x01\x08",
-    "sequencerBeatNumerator":         b"\x01\x00\x01\x0A",
-    "sequencerBeatDenominator":       b"\x01\x00\x01\x0B",
-    "sequencerPartSwAccomp":          b"\x01\x00\x01\x0C",
-    "sequencerPartSwLeft":            b"\x01\x00\x01\x0D",
-    "sequencerPartSwRight":           b"\x01\x00\x01\x0E",
-    "metronomeStatus":                b"\x01\x00\x01\x0F",
-    "headphonesConnection":           b"\x01\x00\x01\x10",
-    # 010002xx
-    "keyBoardMode":                   b"\x01\x00\x02\x00",
-    "splitPoint":                     b"\x01\x00\x02\x01",
-    "splitOctaveShift":               b"\x01\x00\x02\x02",
-    "splitBalance":                   b"\x01\x00\x02\x03",
-    "dualOctaveShift":                b"\x01\x00\x02\x04",
-    "dualBalance":                    b"\x01\x00\x02\x05",
-    "twinPianoMode":                  b"\x01\x00\x02\x06",
-    "toneForSingle":                  b"\x01\x00\x02\x07",
-    "toneForSplit":                   b"\x01\x00\x02\x0A",
-    "toneForDual":                    b"\x01\x00\x02\x0D",
-    "songNumber":                     b"\x01\x00\x02\x10",
-    "masterVolume":                   b"\x01\x00\x02\x13",
-    "masterVolumeLimit":              b"\x01\x00\x02\x14",
-    "allSongPlayMode":                b"\x01\x00\x02\x15",
-    "splitRightOctaveShift":          b"\x01\x00\x02\x16",
-    "dualTone1OctaveShift":           b"\x01\x00\x02\x17",
-    "masterTuning":                   b"\x01\x00\x02\x18",
-    "ambience":                       b"\x01\x00\x02\x1A",
-    "headphones3DAmbience":           b"\x01\x00\x02\x1B",
-    "brilliance":                     b"\x01\x00\x02\x1C",
-    "keyTouch":                       b"\x01\x00\x02\x1D",
-    "transposeMode":                  b"\x01\x00\x02\x1E",
-    "metronomeBeat":                  b"\x01\x00\x02\x1F",
-    "metronomePattern":               b"\x01\x00\x02\x20",
-    "metronomeVolume":                b"\x01\x00\x02\x21",
-    "metronomeTone":                  b"\x01\x00\x02\x22",
-    "metronomeDownBeat":              b"\x01\x00\x02\x23",
-    # 010003xx
-    "applicationMode":                b"\x01\x00\x03\x00",
-    "scorePageTurn":                  b"\x01\x00\x03\x02",
-    "arrangerPedalFunction":          b"\x01\x00\x03\x03",
-    "arrangerBalance":                b"\x01\x00\x03\x05",
-    "connection":                     b"\x01\x00\x03\x06",
-    "keyTransposeWO":                 b"\x01\x00\x03\x07",
-    "songTransposeWO":                b"\x01\x00\x03\x08",
-    "sequencerTempoWO":               b"\x01\x00\x03\x09",
-    "tempoReset":                     b"\x01\x00\x03\x0B",
-    # 010004xx
-    "soundEffect":                    b"\x01\x00\x04\x00",
-    "soundEffectStopAll":             b"\x01\x00\x04\x02",
-    # 010005xx
-    "sequencerREW":                   b"\x01\x00\x05\x00",
-    "sequencerFF":                    b"\x01\x00\x05\x01",
-    "sequencerReset":                 b"\x01\x00\x05\x02",
-    "sequencerTempoDown":             b"\x01\x00\x05\x03",
-    "sequencerTempoUp":               b"\x01\x00\x05\x04",
-    "sequencerPlayStopToggle":        b"\x01\x00\x05\x05",
-    "sequencerAccompPartSwToggle":    b"\x01\x00\x05\x06",
-    "sequencerLeftPartSwToggle":      b"\x01\x00\x05\x07",
-    "sequencerRightPartSwToggle":     b"\x01\x00\x05\x08",
-    "metronomeSwToggle":              b"\x01\x00\x05\x09",
-    "sequencerPreviousSong":          b"\x01\x00\x05\x0A",
-    "sequencerNextSong":              b"\x01\x00\x05\x0B",
-    # 010006xx
-    "pageTurnPreviousPage":           b"\x01\x00\x06\x00",
-    "pageTurnNextPage":               b"\x01\x00\x06\x01",
-    # 010007xx
-    "uptime":                         b"\x01\x00\x07\x00",
-    # 010008xx
-    "addressMapVersion":              b"\x01\x00\x08\x00"}
-
-def get_address_name(address):
-    return list(addresses.keys())[list(addresses.values()).index(address)]
-
-def get_address_size(addressName):
-    addressSizeMap = {  # consider implementing this to read all registers
-        "sequencerMeasure" : 2,
-        "sequencerTempoRO" : 2,
-        "masterTuning"     : 2,
-        "toneForSingle"    : 3
-    }
-
-    if addressName in addressSizeMap:
-        return addressSizeMap[addressName]
-    else:
-        return 1
+        return byte_to_int"""
 
 
-class Message():
-    key_status           = {}
-    sustained_key_status = {}
-    sustain              = 0
-    header_byte          = b""
-
-    buf = b""
-    def __str__(self):
-        buffer = ""
-        buffer += f"buf: {self.buf.hex()}\n"
-        buffer += f"header_byte: {self.header_byte}, timestamp_byte: {self.timestamp_byte}\n"
-        buffer += f"status_byte: {self.status_byte}\n"
-
-        for idx,_ in enumerate(self.notes):
-            buffer += f"note: {self.notes[idx]}, velocity: {self.velocities[idx]}\n"
-
-        return buffer
-        
-
-    def __init__(self):
-        for i in range(0,88+1):
-            self.sustained_key_status[i] = 0
-            self.key_status[i] = 0
-
-    def reset(self):
-        self.buf = b""
-        self.header_byte    = None
-        self.timestamp_byte = None
-        self.status_byte    = None
-
-        self.status_bytes   = None
-        self.notes          = None
-        self.velocities     = None
-
-        self.man_id         = None
-        self.cmd            = None
-        self.address        = None
-        self.data           = None
-        self.checksum       = None
-        return
-
-    def getAudioStatusCodes(self):
-        return [lut['note_on'], lut['note_off'], lut['control_change']]
-
-    def isAudioMsg(self):
-        return self.status_byte in self.getAudioStatusCodes()
-
-    def isValidAudioMsg(self):
-        return self.status_byte and self.notes and self.velocities
-    
-    def isSysExMsg(self):
-        return self.status_byte == lut['sysex_msg_start']
-
-    def timeStampChanged(self,data):
-        return self.timestamp_byte != data[2:3]
-
-    def sysExMsgEnded(self):
-        return (lut['sysex_msg_end'] in self.buf)
-
-    def validSysExMsgLength(self):
-        # cmd (2) + address (8) + data (>=1) + checksum (1)
-        return len(self.buf) >= (2+8+1+1)
-
-    def isNewMsg(self, data):
-        headerChanged = data[0:1] != self.header_byte
-        isMidiMsg = len(data) == 5 and (data[2:3] in self.getAudioStatusCodes())
-        return headerChanged or isMidiMsg
-
-    def append(self,data):
-        if self.isNewMsg(data):
-            # new message, discard old message
-            self.reset()
-            try:
-                self.header_byte    = data[0:1]
-                self.timestamp_byte = data[1:2]
-                self.status_byte    = data[2:3]
-                self.buf            = data[3:]
-            except Exception:
-                return -1 # done, with errors
-            if self.isAudioMsg():
-
-                # len is 5 + (n*4)
-                # n is not larger than 2, so basically a message can hold 3 midi audio updates. 
-                #TODO: write more elegantly
-
-                if len(self.buf) == 2: # Contains one midi msg
-                    try:
-                        print("1 midi message")
-                        self.status_bytes = [self.status_byte]
-                        self.notes     = [self.buf[0:1]]
-                        self.velocities = [self.buf[1:2]]
-                    except Exception:
-                        return -1  # done, with errors
-                elif len(self.buf) == 6: # Contains two midi msgs ('compressed')
-                    try:
-                        print("2 midi messages")
-                        self.status_bytes = [self.status_byte, self.buf[3:4]]
-                        self.notes     = [self.buf[0:1],self.buf[4:4+1]]
-                        self.velocities = [self.buf[1:2],self.buf[5:5+1]]
-                    except Exception:
-                        return -1  # done, with errors
-                else:
-                    print("more than 2 midi msgs")
-                return 1 # done
-        else: #if the timestampbyte (first byte) is the same, we treat as the same packet?
-            print("not audio msg")
-            self.buf += data[1:] # append message
-    
-        if self.isSysExMsg() and self.sysExMsgEnded() and self.validSysExMsgLength():
-            print("sysex")
-            self.buf      = self.buf.split(lut['sysex_msg_end'])[0] # cut the message at the end
-            self.man_id   = self.buf[0:6]
-            self.cmd      = self.buf[6:6+1]
-            self.address  = self.buf[7:7+4]
-            l             = len(self.buf)
-            self.checksum = self.buf[l-2:l-1] 
-            self.data     = self.buf[11:l-2]
-            return 1 # done succesfully
-        else:
-            return 0 # not done
-
-    #My version of append()
-    def appendNew(self,data):
-        if self.isNewMsg(data):
-            print("new msg")
-        else:
-            print("same timestamp as prev + more than 1 midimsg")
-        # new message, discard old message
-        self.reset()
-        try:
-            self.header_byte    = data[0:1]
-            self.timestamp_byte = data[1:2]
-            self.status_byte    = data[2:3]
-            self.buf            = data[3:]
-        except Exception:
-            return -1 # done, with errors
-        if self.isAudioMsg():
-            # len is 5 + (n*4)
-            # n is not larger than 2, so basically a message can hold 3 midi audio updates. 
-            #TODO: write more elegantly
-
-            if len(self.buf) == 2: # Contains one midi msg
-                try:
-                    print("1 midi message")
-                    self.status_bytes = [self.status_byte]
-                    self.notes     = [self.buf[0:1]]
-                    self.velocities = [self.buf[1:2]]
-                except Exception:
-                    return -1  # done, with errors
-            elif len(self.buf) == 6: # Contains two midi msgs ('compressed')
-                try:
-                    print("2 midi messages")
-                    self.status_bytes = [self.status_byte, self.buf[3:4]]
-                    self.notes     = [self.buf[0:1],self.buf[4:4+1]]
-                    self.velocities = [self.buf[1:2],self.buf[5:5+1]]
-                except Exception:
-                    return -1  # done, with errors
-            else:
-                print("more than 2 midi msgs")
-            return 1 # done
-    
-        if self.isSysExMsg() and self.sysExMsgEnded() and self.validSysExMsgLength():
-            print("sysex")
-            self.buf      = self.buf.split(lut['sysex_msg_end'])[0] # cut the message at the end
-            self.man_id   = self.buf[0:6]
-            self.cmd      = self.buf[6:6+1]
-            self.address  = self.buf[7:7+4]
-            l             = len(self.buf)
-            self.checksum = self.buf[l-2:l-1] 
-            self.data     = self.buf[11:l-2]
-            return 1 # done succesfully
-        else:
-            return 0 # not done
-
-    def get_checksum(self,addr,data):
-        total = 0
-        for b in addr:
-            total += b
-        for b in data:
-            total += b        
-        return int_to_byte(128 - (total % 128))  
-
-    def isValidRolandMsg(self):
-        cmp_checksum = self.get_checksum(self.address, self.data)
-        correct_size = get_address_size(get_address_name(self.address)) == len(self.data)
-        return self.man_id == lut['id_roland'] and self.cmd and self.address and self.checksum == cmp_checksum and correct_size
-
-
-    def decode(self):
-        if self.isAudioMsg():
-            if self.isValidAudioMsg():
-                for idx,_ in enumerate(self.notes):
-                    key = byte_to_int(self.notes[idx]) - 21
-                    vel = byte_to_int(self.velocities[idx])
-
-                    if self.status_bytes[idx]   == lut['note_on']:
-                        self.key_status[key] = vel
-                    elif self.status_bytes[idx] == lut['note_off']: #TODO: fix bug when sustain is released and note is not turned of
-                        self.key_status[key] = 0
-                    elif self.status_bytes[idx] == lut['control_change']:
-                        self.sustain = vel
-
-                    log.debug(f"key: {key}, vel: {vel}")
-                    log.debug(f"{self.status_bytes[idx].hex()} - note: {self.notes[idx].hex()}, velocity: {self.velocities[idx].hex()}")
-                    # key_recorder.debug(f"key: {key}, vel: {vel}")
-                    key_recorder.debug(f"{self.status_bytes[idx].hex()} - note: {self.notes[idx].hex()}, velocity: {self.velocities[idx].hex()}")
-
-                log.debug(list(self.key_status.values())[-10:])
-                log.debug(f"sustain: {self.sustain}")    
-
-                # # Handle sustain pedal
-                if self.sustain == 0:
-                    self.sustained_key_status = self.key_status.copy()
-                else:
-                    for k,_ in self.key_status.items(): 
-                        if self.key_status[k] >= self.sustained_key_status[k]: 
-                            self.sustained_key_status[k] = self.key_status[k]
-
-                log.debug(list(self.sustained_key_status.values())[-10:])
-                return 0
-
-        elif self.isSysExMsg():
-            if self.isValidRolandMsg():
-                if self.address == addresses["toneForSingle"]:
-                    global instrument
-                    instrument = instrument_lookup.get(byte_to_int(self.data), None)
-                    # print(instrument_lookup)
-                # log.info(f"address: {self.address.hex()}, data: {self.data.hex()}, cmd: {self.cmd.hex()}")
-                fields[get_address_name(self.address)] = (self.data,True)
-                return 0
-        return -1
 
 
 midi_data = bytearray()
@@ -495,7 +122,6 @@ class RolandPiano(btle.Peripheral):
     service_uuid        = "03b80e5a-ede8-4b33-a751-6ce34ec4c700"
     characteristic_uuid = "7772e5db-3868-4112-a1a9-f2669d106bf3"
     setup_data = b"\x01\x00" #data we need to write to enable notification on a certain characteristic
-    
     def save_to_file(self, filename):
         # Write the MIDI data to a file
         with open(filename, 'wb') as midi_file:
@@ -526,23 +152,24 @@ class RolandPiano(btle.Peripheral):
                     
                     self.writeCharacteristic(16, midi_message, withResponse=False)
 
-
+    """
+    Returns the instrument of the piano currently set to piano
+    """
     def get_instrument(self):
         # print(self.read_register("toneForSingle"))
         self.read_register("toneForSingle")
+        self.instrument = MyDelegate.message.instrument
         # return self.read_register("toneForSingle")
-        return instrument
+        return self.instrument
 
-    def instrument(self, inst: Instruments):
+    """
+    Sets the instrument of the piano to params: inst
+    """
+    def set_instrument(self, inst: Instruments):
         value = (inst.value[0] << 16) | inst.value[1]
-        global instrument
-        instrument = inst
-        # print("value is")
-        # print(value)
-        logging.info(f"value is {value}")
-        logging.info(f"in bytes : {data_as_bytes(value)}")
-        # self.write_register('toneForSingle', data_as_bytes(value))
+        self.instrument = inst
         self.write_register('toneForSingle', data_as_bytes(value))
+
         
     def build_handle_table(self):
         cols = ['handle','uuid_bytes','uuid_str']
@@ -587,7 +214,7 @@ class RolandPiano(btle.Peripheral):
     def access_register(self,addressName,data=None):
         readRegister = False
 
-        addr      = addresses[addressName]
+        addr      = RolandAddressMap.addresses[addressName]
         # ut        = self.get_unix_time()
         # header    = self.get_header(ut)
         # timestamp = self.get_timestamp(ut)    
@@ -597,8 +224,8 @@ class RolandPiano(btle.Peripheral):
         timestamp = timestamp.to_bytes(1,byteorder='little')  
 
         if data == None: # Read register
-            data      = b"\x00\x00\x00" + int_to_byte(get_address_size(addressName))
-            #TODO: Change this data to size of bytes represented in 4 bytes.. Assuming limited size(represented by 1 byte) here..
+            data      = b"\x00\x00\x00" + int_to_byte(RolandAddressMap.get_address_size(addressName))
+            #TODO: Change this data to size of bytes represented in 4 bytes. Currently Assuming limited size(represented by 1 byte) here..
             readRegister = True
 
         checksum = self.get_checksum(addr,data)
@@ -634,67 +261,10 @@ class RolandPiano(btle.Peripheral):
 
     def write_register(self,addressName,data):
         self.access_register(addressName,data)
-
-
-    def read_field(self,field):
-        if field in fields:
-            (data,isNew) = fields[field]
-            if isNew:
-                fields[field] = (data,False)
-            return (data, isNew)
-        else:
-            return ("", False)
-
-    def print_fields(self,fields, onlyUpdates = False):
-        for field in fields:
-            (data,isNew) = self.read_field(field)
-            if onlyUpdates and not isNew:
-                continue
-            else:
-                parser = get_parser(field)
-                log.info(f"{field}: {parser(data)}")
-
-    def update_fields(self,fields):
-        for field in fields:
-            self.read_register(field)
-
-    def get_header(self,unix_time):
-        mask_header    = b'\x7f'
-        return ((mask_header[0]    & unix_time[0]) | b'\x80'[0]).to_bytes(1,byteorder='little') #0b10000000
-    
-    def get_timestamp(self,unix_time):
-        mask_timestamp = b'\x3f'
-        return ((mask_timestamp[0] & unix_time[0]) | b'\x80'[0]).to_bytes(1,byteorder='little') #0b10000000
-
-    def get_unix_time(self):
-        return int(bin(int(time.time()))[-8:],2).to_bytes(1,byteorder='little')
     
     def get_time_ms(self):
         return int((time.time() - self.start_time) * 1000) % 8192
-
-    def play_note(self,note, force):
-        note  = note_string_to_midi(note)
-        print(f"note : {note.hex()}")
-        force = int_to_byte(force)
-
-        ut = self.get_unix_time()
-
-        msg = self.get_header(ut) + self.get_timestamp(ut) + lut['note_on'] + note + force
-        self.writeCharacteristic(16,msg) # 16 is the handler of the midi characteristic
-
-    # Play note for a time duration
-    def play_note_duration(self, note, force, duration):
-        note  = note_string_to_midi(note)
-        print(f"note : {note.hex()}")
-        force = int_to_byte(force)
-        ut = self.get_unix_time()
-        utLater = int(bin(int(time.time())+duration)[-8:],2).to_bytes(1,byteorder='little')
-        noteOnMsg = self.get_header(ut) + self.get_timestamp(ut) + lut['note_on'] + note + force
-        noteOffMsg = self.get_header(utLater) + self.get_timestamp(utLater) + lut['note_off'] + note + force
-        self.writeCharacteristic(16,noteOnMsg) # 16 is the handler of the midi characteristic
-        self.writeCharacteristic(16,noteOffMsg)
     
-
     #header byte : 0x80 (128) to 0xBF(191)
     #timestamp byte : 0x80 (128) to 0xFF (255)
     def create_ble_midi_header(self, time_ms):
@@ -705,7 +275,7 @@ class RolandPiano(btle.Peripheral):
     # This function plays a pre-downloaded midiFile mid on the piano
     def play_mid(self, mid):
         # inst = self.get_instrument() maybe inefficient?
-        inst = instrument
+        inst = self.instrument
         print(f"inst for this midi player : {str(inst)}")
         bank_msb = inst.value[2]
         bank_lsb = inst.value[3]
@@ -717,31 +287,31 @@ class RolandPiano(btle.Peripheral):
                 return
             input_time_ms = int((input_time_ms + msg.time * 1000) % 8192)          
             midi_msg = msg.bin()
-            if (msg.type == 'program_change'):
-                # extract channel number nibble(4-bits) ex) 0xb0's 0 and 0xb1's 1.
-                msg_channel = (midi_msg[0] & 0xF)
+            # if (msg.type == 'program_change'):
+            #     # extract channel number nibble(4-bits) ex) 0xb0's 0 and 0xb1's 1.
+            #     msg_channel = (midi_msg[0] & 0xF)
                 
-                # bank_msb = 16
-                # bank_lsb = 67
-                # pc = 0
-                # calculate the 2 cc messages to send for bank select
-                # First : BnH 00H msbH 
-                # Second : BnH 20H lsbH
-                bank_select_msb = (0xb0 | msg_channel).to_bytes(1, byteorder='big') + b'\x00' + bank_msb.to_bytes(1, byteorder='big')
-                bank_select_lsb = (0xb0 | msg_channel).to_bytes(1, byteorder='big') + b'\x20' + bank_lsb.to_bytes(1, byteorder='big')
-                pc_msg = (0xc0 | msg_channel).to_bytes(1, byteorder='big') + pc.to_bytes(1, byteorder='big')
-                #pack 3 midi msgs into one packet
-                header, timestamp = self.create_ble_midi_header(input_time_ms)
-                header = header.to_bytes(1, byteorder='big')
-                timestamp = timestamp.to_bytes(1, byteorder='big')
-                full_pc_msg = (header + timestamp + bank_select_msb
-                          + timestamp + bank_select_lsb
-                          + timestamp + pc_msg)
-                print(f"full_pc_msg : {full_pc_msg.hex()}")
-                print(midi_msg.hex())
-                self.writeCharacteristic(16, full_pc_msg)
-                continue
-                midi_msg[1] = 1
+            #     # bank_msb = 16
+            #     # bank_lsb = 67
+            #     # pc = 0
+            #     # calculate the 2 cc messages to send for bank select
+            #     # First : BnH 00H msbH 
+            #     # Second : BnH 20H lsbH
+            #     bank_select_msb = (0xb0 | msg_channel).to_bytes(1, byteorder='big') + b'\x00' + bank_msb.to_bytes(1, byteorder='big')
+            #     bank_select_lsb = (0xb0 | msg_channel).to_bytes(1, byteorder='big') + b'\x20' + bank_lsb.to_bytes(1, byteorder='big')
+            #     pc_msg = (0xc0 | msg_channel).to_bytes(1, byteorder='big') + pc.to_bytes(1, byteorder='big')
+            #     #pack 3 midi msgs into one packet
+            #     header, timestamp = self.create_ble_midi_header(input_time_ms)
+            #     header = header.to_bytes(1, byteorder='big')
+            #     timestamp = timestamp.to_bytes(1, byteorder='big')
+            #     full_pc_msg = (header + timestamp + bank_select_msb
+            #               + timestamp + bank_select_lsb
+            #               + timestamp + pc_msg)
+            #     print(f"full_pc_msg : {full_pc_msg.hex()}")
+            #     print(midi_msg.hex())
+            #     self.writeCharacteristic(16, full_pc_msg)
+            #     continue
+            #     midi_msg[1] = 1
             header, timestamp = self.create_ble_midi_header(input_time_ms)      
             self.writeCharacteristic(16, header.to_bytes(1,byteorder='little') 
                                      + timestamp.to_bytes(1,byteorder='little') + midi_msg )
@@ -749,86 +319,8 @@ class RolandPiano(btle.Peripheral):
             #       + timestamp.to_bytes(1,byteorder='little') + midi_msg)
             # print(str(msg))
 
-        # ut = self.get_ut()
-        # ut = 0
-        # bytelength = 0
-        # # start_time = ut
-        # input_time_ms = ut
-        # prev_msg = None
-        # waitForResp = True
-        # total_time_ms = 0
-        # for msg in mid:
-        #     total_time_ms = int((total_time_ms + msg.time * 1000))
-        #     if prev_msg is not None and msg.time == 0: # if delta time is 0, we merge midi messages            
-        #         first_midi_msg = prev_msg.bin()
-        #         input_time_ms = int((input_time_ms + prev_msg.time * 1000) % 8192) 
-        #         header, timestamp = self.create_ble_midi_header(input_time_ms)
-        #         if isinstance(prev_msg, mido.MetaMessage):
-        #             prev_msg = msg
-        #             continue
-        #         if isinstance(msg, mido.MetaMessage):
-        #             ble_midi_msg = (header.to_bytes(1,byteorder='little') + 
-        #                         timestamp.to_bytes(1,byteorder='little') + midi_msg)
-        #             if bytelength > 8500 and waitForResp:
-        #                 print(f"sleeping {int(total_time_ms)/1000} seconds...")
-        #                 time.sleep(int(total_time_ms)/1000)
-        #                 self.writeCharacteristic(16, ble_midi_msg, withResponse=False)
-        #                 waitForResp = False
-        #             else:
-        #                 self.writeCharacteristic(16, ble_midi_msg, withResponse=False)
-        #             print(time.asctime()+ ble_midi_msg.hex())
-        #             prev_msg = msg
-        #             bytelength = bytelength + len(ble_midi_msg)
-        #             print(f"bytelength : {bytelength}")
-        #             # time.sleep(0.01)
-        #             continue
-        #         second_midi_msg = msg.bin()
-        #         ble_midi_msg = (header.to_bytes(1,byteorder='little') + 
-        #                         timestamp.to_bytes(1,byteorder='little') + first_midi_msg + 
-        #                         timestamp.to_bytes(1, byteorder='little') + second_midi_msg)
-        #         prev_msg = None
-        #     elif prev_msg is None: # first element or when prev is meta message or was merged
-        #         prev_msg = msg
-        #         continue 
-        #     else: # next msg's delta time is not 0, so we just send prev_msg as 1 midi message.
-        #         midi_msg = prev_msg.bin()
-        #         input_time_ms = int((input_time_ms + prev_msg.time * 1000) % 8192) 
-        #         header, timestamp = self.create_ble_midi_header(input_time_ms)
-        #         if isinstance(prev_msg, mido.MetaMessage):
-        #             prev_msg = msg
-        #             continue
-        #         ble_midi_msg = (header.to_bytes(1,byteorder='little') + 
-        #                         timestamp.to_bytes(1,byteorder='little') + midi_msg)
-        #         prev_msg = msg
-        #     if bytelength > 8500 and waitForResp:
-        #         print(f"sleeping {int(total_time_ms)/1000} seconds...")
-        #         time.sleep(int(total_time_ms)/1000)
-        #         self.writeCharacteristic(16, ble_midi_msg, withResponse=False)
-        #         waitForResp = False
-        #     else:
-        #         self.writeCharacteristic(16, ble_midi_msg, withResponse=False)
-        #     bytelength = bytelength + len(ble_midi_msg)
-            
-        #     print(time.asctime()+ ble_midi_msg.hex())
-        #     print(f"bytelength : {bytelength}")
-        
-            #here
-            # time.sleep(0.01)
-            # time.sleep(0.005)
 
-            # if isinstance(msg, mido.MetaMessage):
-            #     continue
-            # if msg.is_cc(64):
-            #     print("pedal skipping")
-            #     continue
-            # self.writeCharacteristic(16, header.to_bytes(1,byteorder='little') 
-            #                          + timestamp.to_bytes(1,byteorder='little') + midi_msg, withResponse=False)
-            # print((header.to_bytes(1,byteorder='little') 
-            #       + timestamp.to_bytes(1,byteorder='little') + midi_msg).hex())
-            # prev_msg = msg
             
-        
-
     def get_handle(self,uuid):
         return self.handle_table.loc[self.handle_table['uuid_str'].str.contains(uuid)].at[0,'handle']
 
@@ -879,6 +371,9 @@ class RolandPiano(btle.Peripheral):
         self.write_register('connection',b"\x01")
         #print(self.handle_table)
         log.info("Initialisation sequence completed")
+        self.instrument = self.get_instrument()
+        if self.instrument == None:
+            print("yes it's none")
 
     def idle(self):
         try:
